@@ -1,0 +1,87 @@
+kind: List
+apiVersion: v1
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: nginx-svc
+    annotations:
+      prometheus.io/scrape: "true" # <-- for prometheus to scrape
+      prometheus.io/path: "/stats/prometheus" # <-- this is the URL envoy exposes metrics on
+      prometheus.io/port: "9901"   # <-- this the the port envoy's admin interface listens to (defined in the configmap)
+  spec:
+    ports:
+    - port: 80
+      name: http
+      protocol: TCP
+      targetPort: 10000
+    - port: 9901
+      name: metrics
+      protocol: TCP
+      targetPort: 9901 # <-- this is now the port envoy presents metrics on
+
+    selector:
+      app: nginx
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: nginx
+    name: nginx-deployment
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 2
+    selector:
+      matchLabels:
+        app: nginx
+    strategy:
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 25%
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: nginx
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 80
+            protocol: TCP
+        - name: envoy
+          image: envoyproxy/envoy:v1.18.2
+          ports:
+          - containerPort: 10000 
+            protocol: TCP          
+          - containerPort: 9901 
+            protocol: TCP          
+          command: ["envoy"]
+          args: ["-c", "/etc/envoy.yaml", "--service-cluster", "$(POD_NAME)"]
+          env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          resources:
+              requests:
+                cpu: 50m
+                memory: 50Mi
+              limits:
+                cpu: 100m
+                memory: 256Mi       
+          volumeMounts:
+          - name: envoy-config
+            mountPath: /etc/envoy.yaml
+            subPath: envoy.yaml
+        volumes:
+        - name: envoy-config
+          configMap:
+            name: envoy-config
+
+

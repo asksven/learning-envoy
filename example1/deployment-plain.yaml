@@ -1,0 +1,61 @@
+kind: List
+apiVersion: v1
+items:
+- apiVersion: extensions/v1beta1
+  kind: Ingress
+  metadata:
+    annotations:
+      kubernetes.io/ingress.class: traefik
+    name: status
+  spec:
+    rules:
+    - host: envoy.<your-domain>
+      http:
+        paths:
+        - backend:
+            serviceName: nginx-svc
+            servicePort: 80
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: nginx-svc
+  spec:
+    ports:
+    - port: 80
+      name: http
+      protocol: TCP
+      targetPort: 80
+    selector:
+      app: nginx
+    sessionAffinity: None
+    type: ClusterIP
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    labels:
+      app: nginx
+    name: nginx-deployment
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 2
+    selector:
+      matchLabels:
+        app: nginx
+    strategy:
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 25%
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          app: nginx
+      spec:
+        containers:
+        - name: nginx
+          image: nginx:latest
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 80
+            protocol: TCP
