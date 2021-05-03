@@ -58,19 +58,11 @@ In step 2 we have added a second port (9901) to our service, as well as the scra
 
 ### Querying metrics with prometheus
 
-envoy_cluster_internal_upstream_rq{envoy_cluster_name="some_service",kubernetes_namespace="example1"}
-
-e.g. for the throughput per second: sum(rate(envoy_cluster_internal_upstream_rq_time_count[2m]))
-
-
-
-envoy_cluster_internal_upstream_rq_xx
-returns `envoy_response_code_class` being `2`(for 2xx), `5` (for 5xx).
-
-e.g. rate per second of 2xx: rate(envoy_cluster_internal_upstream_rq_xx{envoy_cluster_name="some_service",kubernetes_namespace="example1",envoy_response_code_class="2"}[5m])
-
-envoy_cluster_internal_upstream_rq_time_bucket
-returns the response times in buckets
+- `envoy_cluster_internal_upstream_rq{envoy_cluster_name="some_service",kubernetes_namespace="example1"}`
+- e.g. for the throughput per second: `sum(rate(envoy_cluster_internal_upstream_rq_time_count[2m]))`
+- `envoy_cluster_internal_upstream_rq_xx` returns `envoy_response_code_class` being `2`(for 2xx), `5` (for 5xx).
+- e.g. rate per second of 2xx: `rate(envoy_cluster_internal_upstream_rq_xx{envoy_cluster_name="some_service",kubernetes_namespace="example1",envoy_response_code_class="2"}[5m])`
+- `envoy_cluster_internal_upstream_rq_time_bucket` returns the response times in buckets
 
 ### Handling outgoing traffic with Envoy
 
@@ -150,3 +142,42 @@ Depending on the use case either config may be intersting:
 1. Get the name of the nginx pod: `kubectl -n example get pods`
 1. Call httpbin.org through the http->https listener: `kubectl -n example exec -it <nginx-pod-name> nginx -- curl http://localhost:10002/ip`
 1. Call httpbin.org through the https-passthrough listener: `kubectl -n example exec -it <nginx-pod-name> nginx -- curl https://localhost:10003/ip`
+
+## Example4 :more on observability
+
+For this example we will create a different setup:
+
+1. Create the namespace: `kubectl create ns observability`
+1. Change the ingress host to suit your needs (in `example4/deployment.yaml`)
+1. Deploy: `kubectl -n observability apply -f example4/`
+
+This is how the "chain" is set-up:
+
+- the ingress points to the service (port 80)
+- the service forwards port 80 to port 10000 (envoy `listener_ingress`)
+- the envoy cluster `ingress_service` forwards to `localhost:38000` (toxyproxy). Please note that with toxiproxy we should use ports outside of the ephemeral port range (see also https://github.com/Shopify/toxiproxy#2-populating-toxiproxy)
+- toxiproxy listens on `localhost:38000` and forwards to `httpbin:80` (see `example4/toxiproxy.yaml` for the proxy config)
+- run a loop querying the service: `while true; do sleep 5; curl https://observability.home.asksven.io/ip; echo -e '\n\n\n\n'$(date);done`
+
+### Metrics
+
+Now that we have everything in place it's time to build a dashboard. Since we have Envoy's Prometheus metrics in place we can build a dashboard showing:
+
+#### Throughput
+- Rate per second: `rate(envoy_cluster_internal_upstream_rq_time_count{kubernetes_namespace="observability",envoy_cluster_name="ingress_service"}[2m])`
+- Rate per second < 10ms: `rate(envoy_cluster_upstream_rq_time_bucket{le="10",envoy_cluster_name="ingress_service",kubernetes_namespace="observability"}[2m])`
+
+#### Error rate
+- Rate of successful requests per second: `rate(envoy_cluster_internal_upstream_rq_xx{envoy_response_code_class="2",kubernetes_namespace="observability",envoy_cluster_name="ingress_service"}[5m])`
+- Error rate per second: `rate(envoy_cluster_internal_upstream_rq_xx{envoy_response_code_class!="2",kubernetes_namespace="observability",envoy_cluster_name="ingress_service"}[5m])`
+
+### Creating some chaos
+
+Using toxiproxy we can now introduce some chaos:
+
+- connect to toxiproxy: `kubectl -n observability exec -it <pod-name> -c toxiproxy -- /bin/sh`
+- add some latency: `/go/bin/toxiproxy-cli toxic add httpbin -n myLatency -type latency --attribute latency=1000 --attribute jitter=1000 --attribute toxicity=0.1`
+- add timeouts `/go/bin/toxiproxy-cli toxic add httpbin -n myTimeout -type timeout --attribute timeout=5000 --attribute toxicity=0.1` **Note:** at this moment it seems that "timeout" does not support the `toxicity` atribute. At least during my tests all requests timed-out once I created that toxic
+- remove timeouts: `/go/bin/toxiproxy-cli toxic delete -n myTimeout httpbin`
+- remove latency: `/go/bin/toxiproxy-cli toxic delete -n myLatency httpbin`
+- add a slighter latency: `/go/bin/toxiproxy-cli toxic add httpbin -n myLatency -type latency --attribute latency=10 --attribute jitter=10 --attribute toxicity=0.5`

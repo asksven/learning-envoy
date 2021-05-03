@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: toxiproxy-config
+data:
+  toxiproxy.json: |
+    [
+      {
+        "name": "httpbin",
+        "listen": "[::]:38000",
+        "upstream": "localhost:80",
+        "enabled": true
+      }
+    ]  

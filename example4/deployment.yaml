@@ -1,14 +1,28 @@
 kind: List
 apiVersion: v1
 items:
+- apiVersion: extensions/v1beta1
+  kind: Ingress
+  metadata:
+    annotations:
+      kubernetes.io/ingress.class: traefik
+    name: status
+  spec:
+    rules:
+    - host: observability.asksven.io
+      http:
+        paths:
+        - backend:
+            serviceName: httpbin-svc
+            servicePort: 80
 - apiVersion: v1
   kind: Service
   metadata:
-    name: nginx-svc
+    name: httpbin-svc
     annotations:
       prometheus.io/scrape: "true" # <-- for prometheus to scrape
       prometheus.io/path: "/stats/prometheus" # <-- this is the URL envoy exposes metrics on
-      prometheus.io/port: "9901"   # <-- this the the port envoy's admin interface listens to (defined in the configmap)
+      prometheus.io/port: "9901"   # <-- this the the port envoy's admin interface listens to (defined in the configmap)    
   spec:
     ports:
     - port: 80
@@ -18,16 +32,19 @@ items:
     - port: 9901
       name: metrics
       protocol: TCP
-      targetPort: 9901 # <-- this is now the port envoy presents metrics on
+      targetPort: 9901
     selector:
-      app: nginx
-    sessionAffinity: None
+      app: httpbin
     type: ClusterIP
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    name: httpbin    
 - apiVersion: apps/v1
   kind: Deployment
   metadata:
     labels:
-      app: nginx
+      app: httpbin
     name: nginx-deployment
   spec:
     progressDeadlineSeconds: 600
@@ -35,24 +52,18 @@ items:
     revisionHistoryLimit: 2
     selector:
       matchLabels:
-        app: nginx
-    strategy:
-      rollingUpdate:
-        maxSurge: 25%
-        maxUnavailable: 25%
-      type: RollingUpdate
+        app: httpbin
     template:
       metadata:
         labels:
-          app: nginx
+          app: httpbin
       spec:
         containers:
-        - name: nginx
-          image: nginx:latest
-          imagePullPolicy: Always
+        - name: httpbin
+          image: docker.io/kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 80
-            protocol: TCP
         - name: envoy
           image: envoyproxy/envoy:v1.18.2
           ports:
@@ -78,9 +89,23 @@ items:
           - name: envoy-config
             mountPath: /etc/envoy.yaml
             subPath: envoy.yaml
+        - name: toxiproxy
+          image: shopify/toxiproxy:2.1.4  
+          command: ["/go/bin/toxiproxy"]
+          args: ["-host=0.0.0.0", "--config", "/config/toxiproxy.json"]
+          volumeMounts:
+          - name: toxiproxy-config
+            mountPath: /config/toxiproxy.json
+            subPath: toxiproxy.json
+
+        nodeSelector:
+          beta.kubernetes.io/arch: amd64                        
         volumes:
         - name: envoy-config
           configMap:
             name: envoy-config
+        - name: toxiproxy-config
+          configMap:
+            name: toxiproxy-config
 
 
