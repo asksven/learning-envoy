@@ -9,7 +9,7 @@ items:
     name: status
   spec:
     rules:
-    - host: observability.asksven.io
+    - host: observability.<your-domain>
       http:
         paths:
         - backend:

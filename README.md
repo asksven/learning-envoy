@@ -157,7 +157,7 @@ This is how the "chain" is set-up:
 - the service forwards port 80 to port 10000 (envoy `listener_ingress`)
 - the envoy cluster `ingress_service` forwards to `localhost:38000` (toxyproxy). Please note that with toxiproxy we should use ports outside of the ephemeral port range (see also https://github.com/Shopify/toxiproxy#2-populating-toxiproxy)
 - toxiproxy listens on `localhost:38000` and forwards to `httpbin:80` (see `example4/toxiproxy.yaml` for the proxy config)
-- run a loop querying the service: `while true; do sleep 5; curl https://observability.home.asksven.io/ip; echo -e '\n\n\n\n'$(date);done`
+- run a loop querying the service: `while true; do sleep 5; curl https://observability<your-domain>/ip; echo -e '\n\n\n\n'$(date);done`
 
 ### Metrics
 
@@ -181,3 +181,11 @@ Using toxiproxy we can now introduce some chaos:
 - remove timeouts: `/go/bin/toxiproxy-cli toxic delete -n myTimeout httpbin`
 - remove latency: `/go/bin/toxiproxy-cli toxic delete -n myLatency httpbin`
 - add a slighter latency: `/go/bin/toxiproxy-cli toxic add httpbin -n myLatency -type latency --attribute latency=10 --attribute jitter=10 --attribute toxicity=0.5`
+
+## Further reading
+
+- Chaos Engineering: Testing known unknowns using ToxiProxy: https://ravindraelicherla.medium.com/testing-known-unknowns-using-toxiproxy-75dfc9d0dc1
+- The Toxiproxy project: github.com/Shopify/toxiproxy
+- Chaos Engineering with ToxiProxy: https://faun.pub/chaos-engineering-with-toxiproxy-d5a91dcfa59a
+- Microservices monitoring with Envoy service mesh, Prometheus & Grafana: https://medium.com/hackernoon/microservices-monitoring-with-envoy-service-mesh-prometheus-grafana-a1c26a8595fc
+- Microservices Patterns With Envoy Sidecar Proxy, Part I: Circuit Breaking: https://blog.christianposta.com/microservices/01-microservices-patterns-with-envoy-proxy-part-i-circuit-breaking/
